@@ -70,6 +70,7 @@ let signedIn = false;
 let modalHandler = null;
 let renderToken = 0;
 let busy = false;
+let pendingFlash = "";
 
 function esc(value) {
   return String(value ?? "").replace(/[&<>"']/g, (ch) => ({
@@ -927,18 +928,23 @@ function monthCells(anchor) {
 function applySession() {
   const session = document.getElementById("rail-session");
   const adminLink = document.querySelector("[data-nav=admin]");
+  const brand = document.getElementById("brand");
+  const admin = Boolean(state.user && state.user.role === "admin");
+  adminLink.hidden = !admin;
+  document.querySelectorAll("[data-shop]").forEach((link) => {
+    link.hidden = admin;
+  });
+  if (brand) brand.setAttribute("href", admin ? "#admin" : "#briefing");
   if (!state.user) {
     session.hidden = true;
-    adminLink.hidden = true;
     return;
   }
+  document.getElementById("rail-user").textContent = state.user.display_name;
+  document.getElementById("rail-role").textContent = admin ? "Administrator" : "Shop";
+  session.hidden = false;
   document.getElementById("app").hidden = false;
   document.getElementById("login").hidden = true;
   document.body.classList.remove("is-login");
-  session.hidden = false;
-  document.getElementById("rail-user").textContent = state.user.display_name;
-  document.getElementById("rail-role").textContent = state.user.role === "admin" ? "Administrator" : "Shop";
-  adminLink.hidden = state.user.role !== "admin";
 }
 
 function showLogin(note) {
@@ -955,6 +961,10 @@ function showLogin(note) {
   const noteEl = document.getElementById("login-note");
   noteEl.hidden = !note;
   noteEl.textContent = note || "";
+  const flash = document.getElementById("flash");
+  flash.hidden = true;
+  flash.textContent = "";
+  pendingFlash = "";
   const username = login.querySelector("[name=username]");
   if (username) username.focus();
 }
@@ -1045,8 +1055,30 @@ async function renderCalendar(iso) {
     </div>`;
 }
 
+async function exportShop() {
+  const response = await fetch("/api/admin/export", { headers: { "X-Kinney-Request": "1" } });
+  if (response.status === 401) {
+    showLogin();
+    throw new Error("Sign in required.");
+  }
+  if (!response.ok) {
+    const data = await response.json().catch(() => ({}));
+    throw new Error(errorMessage(data, "Export failed."));
+  }
+  const blob = await response.blob();
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = "kinney-aviation-backup.json";
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 1500);
+  showFlash("Shop file downloaded. Keep it private. It includes password hashes.", "ok");
+}
+
 async function renderAdmin() {
-  setHeader("Admin", "Sign-in accounts");
+  setHeader("Admin", "Shop administration");
   if (!state.user || state.user.role !== "admin") {
     document.getElementById("view").innerHTML = `<section class="panel"><p>The administrator page is for managing who can sign in.</p></section>`;
     return;
@@ -1074,6 +1106,21 @@ async function renderAdmin() {
     </tr>`;
   }).join("");
   document.getElementById("view").innerHTML = `
+    <section class="panel">
+      <header class="panel-head"><h2>Shop file</h2></header>
+      <p class="backup-note">Export every owner, aircraft, work order, invoice, calendar entry, shop profile, and sign-in account. The file includes password hashes, so keep it private. Import replaces the shop with that file.</p>
+      <div class="row-actions">
+        <button type="button" class="btn btn-primary" data-action="export-data">Export all data</button>
+      </div>
+      <form data-form="import-shop">
+        <div class="form-grid">
+          <label class="span-2">Import file
+            <input type="file" name="file" accept="application/json,.json" required />
+          </label>
+        </div>
+        <div class="row-actions"><button class="btn btn-brass" type="submit">Import all data</button></div>
+      </form>
+    </section>
     <section class="panel">
       <header class="panel-head"><h2>New account</h2></header>
       <form data-form="new-user">
@@ -1140,6 +1187,11 @@ async function renderPresent(parts) {
 }
 
 async function render() {
+  if (state.user && state.user.role === "admin" && parseRoute().name !== "admin") {
+    document.body.classList.remove("is-presenting");
+    if (location.hash !== "#admin") location.hash = "#admin";
+    return;
+  }
   const token = ++renderToken;
   const route = parseRoute();
   const presenting = route.name === "present" && route.parts.length > 0;
@@ -1149,21 +1201,31 @@ async function render() {
   const view = document.getElementById("view");
   if (!view.dataset.loaded) view.innerHTML = `<p class="muted">Loading the shop…</p>`;
   try {
-    await loadCore();
-    if (token !== renderToken) return;
-    renderBanner();
-    if (route.name === "briefing") renderBriefing();
-    else if (route.name === "records" && route.parts[0]) await renderRecordDetail(route.parts[0]);
-    else if (route.name === "records") renderRecords();
-    else if (route.name === "billing" && route.parts[0]) await renderInvoiceDetail(route.parts[0]);
-    else if (route.name === "billing") renderBilling();
-    else if (route.name === "fleet" && route.parts[0]) await renderAircraftDetail(route.parts[0]);
-    else if (route.name === "fleet") renderFleet();
-    else if (route.name === "calendar") await renderCalendar(route.parts[0]);
-    else if (route.name === "admin") await renderAdmin();
-    else if (route.name === "present") await renderPresent(route.parts);
+    if (route.name === "admin") {
+      const banner = document.getElementById("banner");
+      banner.hidden = true;
+      banner.innerHTML = "";
+      await renderAdmin();
+    } else {
+      await loadCore();
+      if (token !== renderToken) return;
+      renderBanner();
+      if (route.name === "briefing") renderBriefing();
+      else if (route.name === "records" && route.parts[0]) await renderRecordDetail(route.parts[0]);
+      else if (route.name === "records") renderRecords();
+      else if (route.name === "billing" && route.parts[0]) await renderInvoiceDetail(route.parts[0]);
+      else if (route.name === "billing") renderBilling();
+      else if (route.name === "fleet" && route.parts[0]) await renderAircraftDetail(route.parts[0]);
+      else if (route.name === "fleet") renderFleet();
+      else if (route.name === "calendar") await renderCalendar(route.parts[0]);
+      else if (route.name === "present") await renderPresent(route.parts);
+    }
     if (token !== renderToken) return;
     view.dataset.loaded = "1";
+    if (pendingFlash) {
+      showFlash(pendingFlash, "ok");
+      pendingFlash = "";
+    }
   } catch (error) {
     if (token !== renderToken || !signedIn) return;
     view.innerHTML = `<p class="form-error">${esc(error.message || "The shop could not be loaded.")}</p>`;
@@ -1423,6 +1485,31 @@ async function onSubmit(event) {
       });
       showFlash("Account added.", "ok");
       render();
+    } else if (kind === "import-shop") {
+      const file = form.querySelector("[name=file]").files[0];
+      if (!file) throw new Error("Choose a shop file.");
+      if (!window.confirm("Replace the shop with this file? Records, invoices, the calendar, and accounts in this file overwrite what is here now.")) return;
+      let payload;
+      try {
+        payload = JSON.parse(await file.text());
+      } catch {
+        throw new Error("That file is not JSON.");
+      }
+      const result = await api("/api/admin/import", { method: "POST", body: payload });
+      state.user = await api("/api/me");
+      applySession();
+      document.getElementById("view").dataset.loaded = "";
+      state.shop = null;
+      state.dashboard = null;
+      state.customers = [];
+      state.aircraft = [];
+      state.records = [];
+      state.invoices = [];
+      pendingFlash = result.message || "Shop data replaced.";
+      if (state.user.role !== "admin") {
+        if ((location.hash || "#briefing") !== "#briefing") location.hash = "#briefing";
+        else render();
+      } else render();
     }
   });
 }
@@ -1503,6 +1590,8 @@ document.addEventListener("click", (event) => {
         showFlash("Removed from the day.", "ok");
         render();
       });
+    } else if (action === "export-data") {
+      run(() => exportShop());
     } else if (action === "sign-out") {
       run(async () => {
         await api("/api/logout", { method: "POST" });

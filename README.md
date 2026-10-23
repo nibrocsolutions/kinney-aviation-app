@@ -7,7 +7,7 @@ Shop application for **Kinney Aviation** — FAA Airframe & Powerplant maintenan
 - **Calendar** — a month planner of what is scheduled each day: visits you add, work that was opened, annuals that come due, and invoices that are still unpaid
 - **Presentation** — owner briefings, work sheets, and invoices rendered from those same records
 
-Sign-in is required. An administrator manages the accounts. A shop account can work the records, the bills, and the calendar.
+Sign-in is required. An administrator uses the Admin page to manage accounts and to export or import the whole shop. A shop account works the records, the bills, and the calendar.
 
 Built to run as a Docker container on a Raspberry Pi or any Docker host, on port **8088**. SQLite data persists in a Docker volume.
 
@@ -25,8 +25,8 @@ With the sample fleet, the first start creates two accounts unless you set diffe
 
 | Account | Username | Password | Can do |
 | --- | --- | --- | --- |
-| Administrator | `admin` | `Kinney-Admin-2026` | Everything, including the Admin page |
-| Shop | `ron` | `Kinney-Shop-2026` | Records, billing, fleet, calendar, and owner sheets |
+| Administrator | `admin` | `Kinney-Admin-2026` | Admin page: accounts, export, and import |
+| Shop | `ron` | `Kinney-Shop-2026` | Briefing, calendar, records, billing, fleet, and owner sheets |
 
 Change both on the Admin page before anyone else can reach the app. Set `ADMIN_PASSWORD` and `SHOP_PASSWORD` to override them. With `SEED_DEMO=0` and no `ADMIN_PASSWORD`, the first start writes a random administrator password to `data/initial-admin-password.txt` inside the data volume.
 
@@ -50,7 +50,7 @@ docker compose down
 - Issue the invoice, record payments, and hand the owner a printed sheet
 - Open an aircraft briefing that shows open squawks, the log, and the balance
 - Open the calendar, see what is already on a day, and add a visit, inspection, parts run, or ferry
-- On the Admin page, add a shop account, reset a password, or deactivate someone who should no longer sign in
+- On the Admin page, add a shop account, reset a password, deactivate someone who should no longer sign in, or export and import the whole shop
 
 Issued invoices stay as written. Change the money by voiding the invoice (after removing payments) and billing the work order again. The write-up on a work order can still be edited after the invoice is issued.
 
@@ -81,6 +81,8 @@ pytest
 | POST | `/api/account/password` | Change your password |
 | GET, POST | `/api/admin/users` | Administrator: accounts |
 | PATCH | `/api/admin/users/{id}` | Administrator: role, password, or active |
+| GET | `/api/admin/export` | Administrator: download the shop file |
+| POST | `/api/admin/import` | Administrator: replace the shop with a shop file |
 | GET | `/api/calendar` | Scheduled days between `start` and `end` |
 | POST | `/api/schedule` | Add a day on the calendar |
 | GET | `/api/dashboard` | Briefing totals |
@@ -120,6 +122,8 @@ pytest
 
 ## Notes
 
+- An administrator’s menu is only the Admin page. A shop account keeps Briefing, Calendar, Records, Billing, Fleet, and Present.
+- Export downloads `kinney-aviation-backup.json`: owners, aircraft, work orders, invoices, the calendar, the shop profile, and accounts. The file contains password hashes. Keep it private. Import replaces what is in the shop, and the person who imports stays signed in.
 - Passwords are hashed. The session cookie is HTTP-only. Changing a password signs that person out.
 - Set `SESSION_SECURE=1` when a reverse proxy terminates HTTPS.
 - The sample administrator and shop passwords are for a private demo. Replace them before the app is reachable beyond the shop.
@@ -135,6 +139,7 @@ pytest
 ├── app/
 │   ├── main.py
 │   ├── api/routes.py
+│   ├── backup.py
 │   ├── billing.py
 │   ├── models.py
 │   ├── seed.py
