@@ -159,6 +159,55 @@ class InvoiceLine(Base):
     invoice: Mapped[Invoice] = relationship(back_populates="lines")
 
 
+class User(Base):
+    __tablename__ = "users"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    username: Mapped[str] = mapped_column(String(32), unique=True, index=True)
+    display_name: Mapped[str] = mapped_column(String(80))
+    password_hash: Mapped[str] = mapped_column(String(200))
+    role: Mapped[str] = mapped_column(String(16), default="shop")
+    active: Mapped[bool] = mapped_column(Boolean, default=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
+
+    sessions: Mapped[list["AuthSession"]] = relationship(
+        back_populates="user", cascade="all, delete-orphan"
+    )
+
+
+class AuthSession(Base):
+    __tablename__ = "auth_sessions"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True)
+    token_hash: Mapped[str] = mapped_column(String(64), unique=True, index=True)
+    expires_at: Mapped[datetime] = mapped_column(DateTime, index=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
+
+    user: Mapped[User] = relationship(back_populates="sessions")
+
+
+class ScheduleEntry(Base):
+    __tablename__ = "schedule_entries"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    scheduled_on: Mapped[date] = mapped_column(Date, index=True)
+    starts_at: Mapped[str | None] = mapped_column(String(5), nullable=True)
+    kind: Mapped[str] = mapped_column(String(24), default="visit")
+    title: Mapped[str] = mapped_column(String(160))
+    notes: Mapped[str] = mapped_column(Text, default="")
+    aircraft_id: Mapped[int | None] = mapped_column(
+        ForeignKey("aircraft.id", ondelete="SET NULL"), nullable=True, index=True
+    )
+    record_id: Mapped[int | None] = mapped_column(
+        ForeignKey("maintenance_records.id", ondelete="SET NULL"), nullable=True
+    )
+    created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
+
+    aircraft: Mapped[Aircraft | None] = relationship()
+    record: Mapped[MaintenanceRecord | None] = relationship()
+
+
 class Payment(Base):
     __tablename__ = "payments"
 

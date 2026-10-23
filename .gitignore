@@ -14,6 +14,7 @@ env/
 .vscode/
 data/*.db
 data/*.sqlite3
+data/initial-admin-password.txt
 !data/.gitkeep
 .pytest_cache/
 .coverage

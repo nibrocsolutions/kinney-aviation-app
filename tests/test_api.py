@@ -18,6 +18,8 @@ def test_health_and_homepage(client):
     assert "Billing" in body
     assert "Present" in body
     assert "Briefing" in body
+    assert "Calendar" in body
+    assert "Sign in" in body
 
 
 def test_seeded_fleet_billing_matches_the_work_orders(client):

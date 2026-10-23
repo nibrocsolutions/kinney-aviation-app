@@ -1,10 +1,12 @@
-"""First-run shop profile and a demonstration Arizona fleet."""
+"""First-run shop profile, sign-in accounts, and a demonstration Arizona fleet."""
 
+import secrets
 from datetime import date
 
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
+from app.auth import hash_password, normalize_password, normalize_username
 from app.billing import invoice_totals, lines_from_record, recompute_invoice
 from app.config import settings
 from app.models import (
@@ -16,7 +18,9 @@ from app.models import (
     MaintenanceRecord,
     PartLine,
     Payment,
+    ScheduleEntry,
     Shop,
+    User,
 )
 from app.numbers import next_number
 
@@ -42,11 +46,63 @@ def ensure_shop(db: Session) -> Shop:
     return shop
 
 
+def _password_for(explicit: str, demo_fallback: str, label: str) -> tuple[str, bool]:
+    chosen = explicit or (demo_fallback if settings.seed_demo else "")
+    generated = False
+    if not chosen:
+        chosen = secrets.token_urlsafe(18)
+        generated = True
+    try:
+        normalize_password(chosen)
+    except ValueError as exc:
+        raise RuntimeError(f"{label} must be at least 10 characters.") from exc
+    return chosen, generated
+
+
+def ensure_users(db: Session) -> None:
+    if db.scalar(select(func.count(User.id))):
+        return
+    username = normalize_username(settings.admin_username)
+    password, generated = _password_for(settings.admin_password, "Kinney-Admin-2026", "ADMIN_PASSWORD")
+    db.add(
+        User(
+            username=username,
+            display_name="Administrator",
+            password_hash=hash_password(password),
+            role="admin",
+            active=True,
+        )
+    )
+    if generated:
+        path = settings.data_dir / "initial-admin-password.txt"
+        path.write_text(password + "\n", encoding="utf-8")
+        path.chmod(0o600)
+        print(f"Kinney Aviation: initial administrator password written to {path}", flush=True)
+    if settings.seed_demo:
+        shop_name = normalize_username(settings.shop_username)
+        if shop_name == username:
+            shop_name = ""
+        shop_password, _generated = _password_for(settings.shop_password, "Kinney-Shop-2026", "SHOP_PASSWORD")
+        if shop_name:
+            display = "Ron Kinney" if shop_name == "ron" else shop_name
+            db.add(
+                User(
+                    username=shop_name,
+                    display_name=display,
+                    password_hash=hash_password(shop_password),
+                    role="shop",
+                    active=True,
+                )
+            )
+    db.flush()
+
+
 def seed_database(db: Session) -> None:
     shop = ensure_shop(db)
     if settings.seed_demo and db.scalar(select(func.count(Customer.id))) == 0:
         _load_demo(db, shop)
         shop.demo_seeded = True
+    ensure_users(db)
     db.commit()
 
 
@@ -354,4 +410,34 @@ def _load_demo(db: Session, shop: Shop) -> None:
         PartLine(part_number="XC2050", description="Engine oil", quantity=8, unit_price_cents=1100),
         PartLine(part_number="4371-OH", description="Magneto overhaul", quantity=2, unit_price_cents=128500),
     ]
+    db.flush()
+    db.add_all(
+        [
+            ScheduleEntry(
+                scheduled_on=date(2026, 10, 24),
+                starts_at="08:00",
+                kind="visit",
+                title="Continue the annual at Flagstaff",
+                notes="Fly up, finish the inspection, and fit the shimmy damper if it has arrived.",
+                aircraft_id=skyhawk.id,
+                record_id=skyhawk_annual.id,
+            ),
+            ScheduleEntry(
+                scheduled_on=date(2026, 10, 27),
+                kind="parts",
+                title="Magnetos due back from overhaul",
+                notes="Call before the drive to Scottsdale.",
+                aircraft_id=bonanza.id,
+                record_id=oil.id,
+            ),
+            ScheduleEntry(
+                scheduled_on=date(2026, 11, 18),
+                starts_at="09:30",
+                kind="inspection",
+                title="Pre-annual look at the Bonanza",
+                notes="Annual is due two days later.",
+                aircraft_id=bonanza.id,
+            ),
+        ]
+    )
     db.flush()
