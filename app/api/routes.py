@@ -13,6 +13,7 @@ from app.billing import (
     recompute_invoice,
 )
 from app.config import settings
+from app.auth import require_user
 from app.database import get_db
 from app.models import (
     Aircraft,
@@ -62,7 +63,7 @@ from app.serialize import (
     record_out,
 )
 
-router = APIRouter(prefix="/api")
+router = APIRouter(prefix="/api", dependencies=[Depends(require_user)])
 
 
 def _shop(db: Session) -> Shop:
@@ -122,11 +123,6 @@ def _aircraft_query():
         selectinload(Aircraft.invoices).selectinload(Invoice.lines),
         selectinload(Aircraft.invoices).selectinload(Invoice.payments),
     )
-
-
-@router.get("/health")
-def health() -> dict[str, str]:
-    return {"status": "ok", "app": settings.app_name}
 
 
 @router.get("/shop", response_model=ShopOut)

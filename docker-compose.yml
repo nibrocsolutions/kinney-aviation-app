@@ -11,6 +11,11 @@ services:
       DATA_DIR: /data
       PORT: "8088"
       SEED_DEMO: "1"
+      ADMIN_USERNAME: ${ADMIN_USERNAME:-admin}
+      ADMIN_PASSWORD: ${ADMIN_PASSWORD:-Kinney-Admin-2026}
+      SHOP_USERNAME: ${SHOP_USERNAME:-ron}
+      SHOP_PASSWORD: ${SHOP_PASSWORD:-Kinney-Shop-2026}
+      SESSION_SECURE: ${SESSION_SECURE:-0}
     restart: unless-stopped
 
 volumes:

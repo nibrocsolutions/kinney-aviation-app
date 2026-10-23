@@ -573,3 +573,199 @@ class PresentInvoice(BaseModel):
     shop: ShopOut
     generated_on: date
     invoice: InvoiceOut
+
+
+UserRole = Literal["admin", "shop"]
+ScheduleKind = Literal["visit", "inspection", "parts", "ferry", "other"]
+CalendarSource = Literal["entry", "record", "annual", "invoice"]
+
+
+class UserOut(BaseModel):
+    id: int
+    username: str
+    display_name: str
+    role: str
+    active: bool
+    signed_out: bool = False
+
+
+class UserCreate(BaseModel):
+    username: str
+    display_name: str
+    password: str
+    role: UserRole = "shop"
+
+    @field_validator("username")
+    @classmethod
+    def username_ok(cls, value: str) -> str:
+        from app.auth import normalize_username
+
+        return normalize_username(value)
+
+    @field_validator("display_name")
+    @classmethod
+    def display_ok(cls, value: str) -> str:
+        from app.auth import normalize_display_name
+
+        return normalize_display_name(value)
+
+    @field_validator("password")
+    @classmethod
+    def password_ok(cls, value: str) -> str:
+        from app.auth import normalize_password
+
+        return normalize_password(value)
+
+
+class UserUpdate(BaseModel):
+    display_name: str | None = None
+    role: UserRole | None = None
+    active: bool | None = None
+    password: str | None = None
+
+    @field_validator("display_name")
+    @classmethod
+    def display_ok(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        from app.auth import normalize_display_name
+
+        return normalize_display_name(value)
+
+    @field_validator("password")
+    @classmethod
+    def password_ok(cls, value: str | None) -> str | None:
+        if value is None or value == "":
+            return None
+        from app.auth import normalize_password
+
+        return normalize_password(value)
+
+
+class PasswordChange(BaseModel):
+    current_password: str = Field(min_length=1, max_length=200)
+    new_password: str
+
+    @field_validator("new_password")
+    @classmethod
+    def password_ok(cls, value: str) -> str:
+        from app.auth import normalize_password
+
+        return normalize_password(value)
+
+
+class LoginIn(BaseModel):
+    username: str = ""
+    password: str = ""
+
+
+class CalendarItem(BaseModel):
+    key: str
+    source: CalendarSource
+    date: date
+    starts_at: str | None = None
+    kind: str
+    label: str
+    title: str
+    detail: str = ""
+    href: str | None = None
+    editable: bool = False
+    entry_id: int | None = None
+    registration: str | None = None
+
+
+class CalendarOut(BaseModel):
+    start: date
+    end: date
+    items: list[CalendarItem]
+
+
+class ScheduleOut(BaseModel):
+    id: int
+    scheduled_on: date
+    starts_at: str | None
+    kind: str
+    title: str
+    notes: str
+    aircraft_id: int | None
+    record_id: int | None
+    registration: str | None = None
+
+
+def _clock(value: str | None) -> str | None:
+    text = _blank(value)
+    if text is None:
+        return None
+    from app.auth import CLOCK
+
+    if CLOCK.fullmatch(text) is None:
+        raise ValueError("Use a time like 08:30.")
+    return text
+
+
+def _schedule_title(value: str) -> str:
+    text = value.strip()
+    if not text or len(text) > 160:
+        raise ValueError("Enter a short title for the day.")
+    return text
+
+
+def _schedule_notes(value: str) -> str:
+    text = value.strip()
+    if len(text) > 2000:
+        raise ValueError("Keep the note under 2000 characters.")
+    return text
+
+
+class ScheduleIn(BaseModel):
+    scheduled_on: date
+    starts_at: str | None = None
+    kind: ScheduleKind = "visit"
+    title: str
+    notes: str = ""
+    aircraft_id: int | None = None
+    record_id: int | None = None
+
+    @field_validator("starts_at")
+    @classmethod
+    def time_ok(cls, value: str | None) -> str | None:
+        return _clock(value)
+
+    @field_validator("title")
+    @classmethod
+    def title_ok(cls, value: str) -> str:
+        return _schedule_title(value)
+
+    @field_validator("notes")
+    @classmethod
+    def notes_ok(cls, value: str) -> str:
+        return _schedule_notes(value)
+
+
+class ScheduleUpdate(BaseModel):
+    scheduled_on: date | None = None
+    starts_at: str | None = None
+    kind: ScheduleKind | None = None
+    title: str | None = None
+    notes: str | None = None
+    aircraft_id: int | None = None
+    record_id: int | None = None
+
+    @field_validator("starts_at")
+    @classmethod
+    def time_ok(cls, value: str | None) -> str | None:
+        return _clock(value)
+
+    @field_validator("title")
+    @classmethod
+    def title_ok(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        return _schedule_title(value)
+
+    @field_validator("notes")
+    @classmethod
+    def notes_ok(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        return _schedule_notes(value)

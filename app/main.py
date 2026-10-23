@@ -5,6 +5,8 @@ from fastapi import FastAPI
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 
+from app.api.accounts import account, admin, public
+from app.api.calendar import router as calendar_router
 from app.api.routes import router
 from app.config import settings
 from app.database import Base, SessionLocal, engine
@@ -26,6 +28,10 @@ async def lifespan(_: FastAPI):
 
 
 app = FastAPI(title=settings.app_name, lifespan=lifespan)
+app.include_router(public)
+app.include_router(account)
+app.include_router(admin)
+app.include_router(calendar_router)
 app.include_router(router)
 app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
 

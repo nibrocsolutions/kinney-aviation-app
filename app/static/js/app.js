@@ -36,6 +36,25 @@ const CERT = {
 
 const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
 
+const SCHEDULE_KINDS = {
+  visit: "Visit",
+  inspection: "Inspection",
+  parts: "Parts",
+  ferry: "Ferry",
+  other: "Note",
+};
+
+const SOURCE_LABEL = {
+  entry: "On the schedule",
+  record: "Work opened",
+  annual: "Annual due",
+  invoice: "Invoice due",
+};
+
+const WEEKDAYS = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
+const WEEKDAYS_SHORT = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+const MONTH_LONG = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
+
 const state = {
   shop: null,
   dashboard: null,
@@ -43,9 +62,11 @@ const state = {
   aircraft: [],
   records: [],
   invoices: [],
+  user: null,
   filters: { records: "", billing: "", fleet: "" },
 };
 
+let signedIn = false;
 let modalHandler = null;
 let renderToken = 0;
 let busy = false;
@@ -130,7 +151,7 @@ function errorMessage(data, fallback) {
 }
 
 async function api(path, options = {}) {
-  const opts = { method: options.method || "GET", headers: {} };
+  const opts = { method: options.method || "GET", headers: { "X-Kinney-Request": "1" } };
   if (options.body !== undefined) {
     opts.headers["Content-Type"] = "application/json";
     opts.body = JSON.stringify(options.body);
@@ -138,6 +159,10 @@ async function api(path, options = {}) {
   const response = await fetch(path, opts);
   if (response.status === 204) return null;
   const data = await response.json().catch(() => ({}));
+  if (response.status === 401 && !path.endsWith("/api/login")) {
+    showLogin();
+    throw new Error(errorMessage(data, "Sign in required."));
+  }
   if (!response.ok) throw new Error(errorMessage(data, response.statusText));
   return data;
 }
@@ -191,7 +216,7 @@ function optionalText(value) {
 
 function parseRoute() {
   const parts = (location.hash.replace(/^#/, "") || "briefing").split("/").filter(Boolean);
-  const known = ["briefing", "records", "billing", "fleet", "present"];
+  const known = ["briefing", "calendar", "records", "billing", "fleet", "present", "admin"];
   if (!known.includes(parts[0])) return { name: "briefing", parts: [] };
   return { name: parts[0], parts: parts.slice(1) };
 }
@@ -864,6 +889,239 @@ function renderInvoiceSheet(data) {
     </article>`;
 }
 
+function isoFromParts(year, monthIndex, day) {
+  return `${year}-${String(monthIndex + 1).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
+}
+
+function parseISODate(iso) {
+  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(iso || "");
+  if (!match) return null;
+  const year = Number(match[1]);
+  const month = Number(match[2]);
+  const day = Number(match[3]);
+  const date = new Date(year, month - 1, day);
+  if (date.getFullYear() !== year || date.getMonth() !== month - 1 || date.getDate() !== day) return null;
+  return date;
+}
+
+function shiftMonth(iso, delta) {
+  const date = parseISODate(iso) || new Date();
+  const target = new Date(date.getFullYear(), date.getMonth() + delta, 1);
+  const last = new Date(target.getFullYear(), target.getMonth() + 1, 0).getDate();
+  return isoFromParts(target.getFullYear(), target.getMonth(), Math.min(date.getDate(), last));
+}
+
+function monthCells(anchor) {
+  const first = new Date(anchor.getFullYear(), anchor.getMonth(), 1);
+  const start = new Date(first);
+  start.setDate(1 - first.getDay());
+  const cells = [];
+  for (let index = 0; index < 42; index += 1) {
+    const day = new Date(start);
+    day.setDate(start.getDate() + index);
+    cells.push(day);
+  }
+  return cells;
+}
+
+function applySession() {
+  const session = document.getElementById("rail-session");
+  const adminLink = document.querySelector("[data-nav=admin]");
+  if (!state.user) {
+    session.hidden = true;
+    adminLink.hidden = true;
+    return;
+  }
+  document.getElementById("app").hidden = false;
+  document.getElementById("login").hidden = true;
+  document.body.classList.remove("is-login");
+  session.hidden = false;
+  document.getElementById("rail-user").textContent = state.user.display_name;
+  document.getElementById("rail-role").textContent = state.user.role === "admin" ? "Administrator" : "Shop";
+  adminLink.hidden = state.user.role !== "admin";
+}
+
+function showLogin(note) {
+  signedIn = false;
+  state.user = null;
+  document.body.classList.add("is-login");
+  document.body.classList.remove("is-presenting");
+  document.getElementById("app").hidden = true;
+  const login = document.getElementById("login");
+  login.hidden = false;
+  const error = document.getElementById("login-error");
+  error.hidden = true;
+  error.textContent = "";
+  const noteEl = document.getElementById("login-note");
+  noteEl.hidden = !note;
+  noteEl.textContent = note || "";
+  const username = login.querySelector("[name=username]");
+  if (username) username.focus();
+}
+
+function showApp() {
+  signedIn = true;
+  applySession();
+}
+
+function dayItem(item) {
+  const when = item.starts_at ? `${item.starts_at} · ` : "";
+  const title = item.href ? `<a href="${esc(item.href)}">${esc(item.title)}</a>` : esc(item.title);
+  const remove = item.editable
+    ? `<button type="button" class="btn btn-danger" data-action="delete-entry" data-id="${item.entry_id}">Remove</button>`
+    : "";
+  return `<article class="day-item">
+    <p class="day-meta">${esc(when)}${esc(SOURCE_LABEL[item.source] || item.source)}</p>
+    <h3>${title}</h3>
+    ${item.detail ? `<p>${esc(item.detail)}</p>` : ""}
+    ${remove}
+  </article>`;
+}
+
+async function renderCalendar(iso) {
+  const selectedDate = parseISODate(iso) || parseISODate(todayISO());
+  const selected = isoFromParts(selectedDate.getFullYear(), selectedDate.getMonth(), selectedDate.getDate());
+  const cells = monthCells(selectedDate);
+  const start = isoFromParts(cells[0].getFullYear(), cells[0].getMonth(), cells[0].getDate());
+  const endDate = cells[cells.length - 1];
+  const end = isoFromParts(endDate.getFullYear(), endDate.getMonth(), endDate.getDate());
+  const calendar = await api(`/api/calendar?start=${start}&end=${end}`);
+  const byDay = {};
+  for (const item of calendar.items) {
+    if (!byDay[item.date]) byDay[item.date] = [];
+    byDay[item.date].push(item);
+  }
+  setHeader("Calendar", "Shop schedule", `<button type="button" class="btn btn-ghost-dark" data-action="cal-open" data-date="${todayISO()}">Today</button>`);
+  const dow = WEEKDAYS_SHORT.map((name) => `<div class="cal-dow">${name}</div>`).join("");
+  const grid = cells.map((day) => {
+    const key = isoFromParts(day.getFullYear(), day.getMonth(), day.getDate());
+    const items = byDay[key] || [];
+    const chips = items.slice(0, 3).map((item) => `<span class="cal-chip cal-${esc(item.kind)}">${esc(item.label)}</span>`).join("");
+    const more = items.length > 3 ? `<span class="cal-more">+${items.length - 3} more</span>` : "";
+    const outside = day.getMonth() === selectedDate.getMonth() ? "" : " is-outside";
+    const today = key === todayISO() ? " is-today" : "";
+    const current = key === selected ? " is-selected" : "";
+    const count = items.length === 1 ? "1 item" : `${items.length} items`;
+    return `<button type="button" class="cal-day${outside}${today}${current}" data-action="cal-open" data-date="${key}" aria-pressed="${current ? "true" : "false"}" aria-label="${day.getDate()} ${MONTH_LONG[day.getMonth()]}, ${count}"><span class="cal-num">${day.getDate()}</span>${chips}${more}</button>`;
+  }).join("");
+  const dayItems = byDay[selected] || [];
+  const list = dayItems.length
+    ? `<div class="day-list">${dayItems.map(dayItem).join("")}</div>`
+    : `<p class="empty">Nothing on this day yet. Add the visit, inspection, or parts run.</p>`;
+  const heading = `${WEEKDAYS[selectedDate.getDay()]}, ${selectedDate.getDate()} ${MONTH_LONG[selectedDate.getMonth()]} ${selectedDate.getFullYear()}`;
+  const aircraftChoices = [{ value: "", label: "No aircraft" }].concat(aircraftOptions());
+  document.getElementById("view").innerHTML = `
+    <div class="calendar-layout">
+      <section class="panel">
+        <div class="cal-toolbar">
+          <h2>${esc(`${MONTH_LONG[selectedDate.getMonth()]} ${selectedDate.getFullYear()}`)}</h2>
+          <div class="cal-nav">
+            <button type="button" class="btn btn-ghost-dark" data-action="cal-open" data-date="${shiftMonth(selected, -1)}">Previous</button>
+            <button type="button" class="btn btn-ghost-dark" data-action="cal-open" data-date="${shiftMonth(selected, 1)}">Next</button>
+          </div>
+        </div>
+        <p class="cal-legend">
+          <span><i class="swatch swatch-visit"></i> Scheduled</span>
+          <span><i class="swatch swatch-work"></i> Work opened</span>
+          <span><i class="swatch swatch-annual"></i> Annual due</span>
+          <span><i class="swatch swatch-due"></i> Invoice due</span>
+        </p>
+        <div class="cal-grid">${dow}${grid}</div>
+      </section>
+      <section class="panel">
+        <header class="panel-head"><h2>${esc(heading)}</h2></header>
+        ${list}
+        <form data-form="schedule" data-date="${selected}">
+          <div class="form-grid">
+            ${field("Title", "title", "", { required: true, wide: true, placeholder: "Fly to Flagstaff" })}
+            <label>Kind<select name="kind">${selectOptions(optionsFrom(SCHEDULE_KINDS), "visit")}</select></label>
+            <label>Aircraft<select name="aircraft_id">${selectOptions(aircraftChoices, "")}</select></label>
+            ${field("Time", "starts_at", "", { type: "time" })}
+            ${field("Notes", "notes", "", { type: "textarea", wide: true, rows: 2 })}
+          </div>
+          <div class="row-actions"><button type="submit" class="btn btn-primary">Add to this day</button></div>
+        </form>
+      </section>
+    </div>`;
+}
+
+async function renderAdmin() {
+  setHeader("Admin", "Sign-in accounts");
+  if (!state.user || state.user.role !== "admin") {
+    document.getElementById("view").innerHTML = `<section class="panel"><p>The administrator page is for managing who can sign in.</p></section>`;
+    return;
+  }
+  const users = await api("/api/admin/users");
+  const activeAdmins = users.filter((user) => user.role === "admin" && user.active);
+  const lastAdminId = activeAdmins.length === 1 ? activeAdmins[0].id : null;
+  const rows = users.map((user) => {
+    const locked = user.id === lastAdminId;
+    const roleButton = locked
+      ? ""
+      : `<button type="button" class="btn btn-ghost-dark" data-action="set-role" data-id="${user.id}" data-role="${user.role === "admin" ? "shop" : "admin"}">${user.role === "admin" ? "Make shop" : "Make administrator"}</button>`;
+    const activeButton = locked
+      ? ""
+      : `<button type="button" class="btn btn-ghost-dark" data-action="set-active" data-id="${user.id}" data-active="${user.active ? "false" : "true"}">${user.active ? "Deactivate" : "Activate"}</button>`;
+    return `<tr>
+      <td><strong>${esc(user.display_name)}</strong><br><span class="muted">${esc(user.username)}</span></td>
+      <td>${user.role === "admin" ? "Administrator" : "Shop"}</td>
+      <td>${user.active ? "Active" : "Inactive"}</td>
+      <td>
+        <button type="button" class="btn btn-ghost-dark" data-action="reset-password" data-id="${user.id}" data-name="${esc(user.display_name)}">Reset password</button>
+        ${roleButton}
+        ${activeButton}
+      </td>
+    </tr>`;
+  }).join("");
+  document.getElementById("view").innerHTML = `
+    <section class="panel">
+      <header class="panel-head"><h2>New account</h2></header>
+      <form data-form="new-user">
+        <div class="form-grid">
+          ${field("Name", "display_name", "", { required: true })}
+          ${field("Username", "username", "", { required: true, placeholder: "dispatch" })}
+          ${field("Password", "password", "", { type: "password", required: true, wide: true })}
+          <label>Role<select name="role">${selectOptions([{ value: "shop", label: "Shop" }, { value: "admin", label: "Administrator" }], "shop")}</select></label>
+        </div>
+        <div class="row-actions"><button class="btn btn-primary" type="submit">Add account</button></div>
+      </form>
+    </section>
+    <section class="panel">
+      <header class="panel-head"><h2>Accounts</h2></header>
+      <div class="table-wrap"><table class="account-table"><thead><tr><th>Person</th><th>Role</th><th>Status</th><th></th></tr></thead><tbody>${rows}</tbody></table></div>
+    </section>`;
+}
+
+function openPasswordModal() {
+  openModal("Change password", `
+    <div class="form-grid">
+      ${field("Current password", "current_password", "", { type: "password", required: true, wide: true })}
+      ${field("New password", "new_password", "", { type: "password", required: true, wide: true })}
+      ${field("Confirm new password", "confirm_password", "", { type: "password", required: true, wide: true })}
+    </div>`, async (data) => {
+    if (data.get("new_password") !== data.get("confirm_password")) throw new Error("Those new passwords do not match.");
+    const result = await api("/api/account/password", {
+      method: "POST",
+      body: { current_password: data.get("current_password"), new_password: data.get("new_password") },
+    });
+    showLogin(result.message || "Password updated. Sign in again.");
+  });
+}
+
+function openResetModal(id, name) {
+  openModal(`Reset password for ${name}`, `
+    <div class="form-grid">
+      ${field("New password", "password", "", { type: "password", required: true, wide: true })}
+    </div>`, async (data) => {
+    const saved = await api(`/api/admin/users/${id}`, { method: "PATCH", body: { password: data.get("password") } });
+    if (saved && saved.signed_out) showLogin("Password updated. Sign in again.");
+    else {
+      showFlash("Password updated.", "ok");
+      render();
+    }
+  });
+}
+
 async function renderPresent(parts) {
   if (!parts.length) {
     document.body.classList.remove("is-presenting");
@@ -886,6 +1144,7 @@ async function render() {
   const route = parseRoute();
   const presenting = route.name === "present" && route.parts.length > 0;
   document.body.classList.toggle("is-presenting", presenting);
+  applySession();
   setNav(route.name);
   const view = document.getElementById("view");
   if (!view.dataset.loaded) view.innerHTML = `<p class="muted">Loading the shop…</p>`;
@@ -900,11 +1159,13 @@ async function render() {
     else if (route.name === "billing") renderBilling();
     else if (route.name === "fleet" && route.parts[0]) await renderAircraftDetail(route.parts[0]);
     else if (route.name === "fleet") renderFleet();
-    else     if (route.name === "present") await renderPresent(route.parts);
+    else if (route.name === "calendar") await renderCalendar(route.parts[0]);
+    else if (route.name === "admin") await renderAdmin();
+    else if (route.name === "present") await renderPresent(route.parts);
     if (token !== renderToken) return;
     view.dataset.loaded = "1";
   } catch (error) {
-    if (token !== renderToken) return;
+    if (token !== renderToken || !signedIn) return;
     view.innerHTML = `<p class="form-error">${esc(error.message || "The shop could not be loaded.")}</p>`;
   }
 }
@@ -1135,6 +1396,33 @@ async function onSubmit(event) {
       await api(`/api/invoices/${id}`, { method: "PATCH", body });
       showFlash("Invoice details saved.", "ok");
       render();
+    } else if (kind === "schedule") {
+      const aircraft = optionalText(data.get("aircraft_id"));
+      await api("/api/schedule", {
+        method: "POST",
+        body: {
+          scheduled_on: form.dataset.date,
+          title: data.get("title"),
+          kind: data.get("kind"),
+          notes: data.get("notes") || "",
+          starts_at: optionalText(data.get("starts_at")),
+          aircraft_id: aircraft ? Number(aircraft) : null,
+        },
+      });
+      showFlash("Added to the day.", "ok");
+      render();
+    } else if (kind === "new-user") {
+      await api("/api/admin/users", {
+        method: "POST",
+        body: {
+          display_name: data.get("display_name"),
+          username: data.get("username"),
+          password: data.get("password"),
+          role: data.get("role"),
+        },
+      });
+      showFlash("Account added.", "ok");
+      render();
     }
   });
 }
@@ -1207,6 +1495,33 @@ document.addEventListener("click", (event) => {
         showFlash("Invoice issued.", "ok");
         render();
       });
+    } else if (action === "cal-open") {
+      go(`#calendar/${actionEl.dataset.date}`);
+    } else if (action === "delete-entry" && window.confirm("Remove this from the day?")) {
+      run(async () => {
+        await api(`/api/schedule/${id}`, { method: "DELETE" });
+        showFlash("Removed from the day.", "ok");
+        render();
+      });
+    } else if (action === "sign-out") {
+      run(async () => {
+        await api("/api/logout", { method: "POST" });
+        showLogin();
+      });
+    } else if (action === "change-password") openPasswordModal();
+    else if (action === "reset-password") openResetModal(id, actionEl.dataset.name);
+    else if (action === "set-role") {
+      run(async () => {
+        await api(`/api/admin/users/${id}`, { method: "PATCH", body: { role: actionEl.dataset.role } });
+        showFlash("Account updated.", "ok");
+        render();
+      });
+    } else if (action === "set-active") {
+      run(async () => {
+        await api(`/api/admin/users/${id}`, { method: "PATCH", body: { active: actionEl.dataset.active === "true" } });
+        showFlash("Account updated.", "ok");
+        render();
+      });
     } else if (action === "void-invoice" && window.confirm("Void this invoice?")) {
       run(async () => {
         await api(`/api/invoices/${id}/void`, { method: "POST" });
@@ -1240,8 +1555,44 @@ document.addEventListener("input", (event) => {
 });
 
 window.addEventListener("hashchange", () => {
+  if (!signedIn) return;
   document.getElementById("flash").hidden = true;
   render();
 });
 
-render();
+document.getElementById("login-form").addEventListener("submit", async (event) => {
+  event.preventDefault();
+  const form = event.currentTarget;
+  const button = form.querySelector("button");
+  const data = new FormData(form);
+  button.disabled = true;
+  try {
+    state.user = await api("/api/login", {
+      method: "POST",
+      body: { username: data.get("username"), password: data.get("password") },
+    });
+    form.querySelector("[name=password]").value = "";
+    showApp();
+    document.getElementById("view").dataset.loaded = "";
+    render();
+  } catch (error) {
+    const err = document.getElementById("login-error");
+    err.hidden = false;
+    err.textContent = error.message || "Sign in failed.";
+    document.getElementById("login-note").hidden = true;
+  } finally {
+    button.disabled = false;
+  }
+});
+
+async function boot() {
+  try {
+    state.user = await api("/api/me");
+    showApp();
+    render();
+  } catch {
+    showLogin();
+  }
+}
+
+boot();
