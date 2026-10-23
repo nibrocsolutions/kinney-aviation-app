@@ -1,0 +1,17 @@
+services:
+  kinney-aviation:
+    build: .
+    image: kinney-aviation-app:latest
+    container_name: kinney-aviation
+    ports:
+      - "8088:8088"
+    volumes:
+      - kinney-data:/data
+    environment:
+      DATA_DIR: /data
+      PORT: "8088"
+      SEED_DEMO: "1"
+    restart: unless-stopped
+
+volumes:
+  kinney-data:
