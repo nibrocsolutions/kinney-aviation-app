@@ -1,9 +1,11 @@
 import hashlib
+import json
 
 from fastapi import APIRouter, Depends, HTTPException, Request, Response
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
+from app.backup import build_backup, restore_backup
 from app.auth import (
     COOKIE,
     authenticate,
@@ -182,3 +184,34 @@ def update_user(
         clear_session_cookie(response)
         saved.signed_out = True
     return saved
+
+
+@admin.get("/export")
+def export_shop(db: Session = Depends(get_db)) -> Response:
+    try:
+        payload = build_backup(db)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    body = json.dumps(payload, indent=2, ensure_ascii=False)
+    return Response(
+        content=body,
+        media_type="application/json",
+        headers={
+            "Content-Disposition": 'attachment; filename="kinney-aviation-backup.json"',
+            "Cache-Control": "no-store",
+        },
+    )
+
+
+@admin.post("/import")
+def import_shop(payload: dict, request: Request, db: Session = Depends(get_db)) -> dict:
+    try:
+        return restore_backup(
+            db,
+            payload,
+            token=request.cookies.get(COOKIE),
+            user_id=request.state.user.id,
+        )
+    except ValueError as exc:
+        db.rollback()
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
