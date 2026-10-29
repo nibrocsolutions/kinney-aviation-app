@@ -17,6 +17,17 @@ def test_health_and_homepage(client):
     assert "Records" in body
     assert "Billing" in body
     assert "Aircraft" in body
+    assert "/static/js/app.js?v=" in body
+    assert "/static/css/app.css?v=" in body
+    assert page.headers["cache-control"] == "no-cache"
+    script = client.get("/static/js/app.js")
+    assert script.status_code == 200
+    assert script.headers["cache-control"] == "no-cache"
+    assert 'setHeader("Aircraft", "Briefings"' in script.text
+    assert "All Aircraft" in script.text
+    assert "Download PDF" in script.text
+    assert 'setHeader("Present"' not in script.text
+    assert "All presentations" not in script.text
     assert "Briefing" in body
     assert "Calendar" in body
     assert "Sign in" in body
