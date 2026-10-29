@@ -5,9 +5,9 @@ Shop application for **Kinney Aviation** — FAA Airframe & Powerplant maintenan
 - **Records** — owners, aircraft, and maintenance work orders (discrepancy, corrective action, times, and sign-off)
 - **Billing** — invoices built from a work order’s labor, parts, and pilot-mechanic travel, then issued and paid
 - **Calendar** — a month planner of what is scheduled each day: visits you add, work that was opened, annuals that come due, and invoices that are still unpaid
-- **Presentation** — owner briefings, work sheets, and invoices rendered from those same records
+- **Aircraft** — owner briefings, work sheets, and invoices rendered from those same records, with a PDF of each aircraft briefing
 
-Sign-in is required. An administrator uses the Admin page to manage accounts and to export or import the whole shop. A shop account works the records, the bills, and the calendar.
+Sign-in is required. An administrator sees the shop tabs and the Admin page, for accounts and for exporting or importing the whole shop. A shop account works the records, the bills, the calendar, and the aircraft briefings.
 
 Built to run as a Docker container on a Raspberry Pi or any Docker host, on port **8088**. SQLite data persists in a Docker volume.
 
@@ -25,10 +25,10 @@ With the sample fleet, the first start creates two accounts unless you set diffe
 
 | Account | Username | Password | Can do |
 | --- | --- | --- | --- |
-| Administrator | `admin` | `Kinney-Admin-2026` | Admin page: accounts, export, and import |
-| Shop | `ron` | `Kinney-Shop-2026` | Briefing, calendar, records, billing, fleet, and owner sheets |
+| Administrator | `admin` | `admin` | Shop tabs, plus accounts, export, and import |
+| Shop | `ron` | `ron` | Briefing, calendar, records, billing, fleet, and aircraft briefings |
 
-Change both on the Admin page before anyone else can reach the app. Set `ADMIN_PASSWORD` and `SHOP_PASSWORD` to override them. With `SEED_DEMO=0` and no `ADMIN_PASSWORD`, the first start writes a random administrator password to `data/initial-admin-password.txt` inside the data volume.
+These sample passwords match the usernames. Change both on the Admin page before anyone else can reach the app. Set `ADMIN_PASSWORD` and `SHOP_PASSWORD` to override them. With `SEED_DEMO=0` and no `ADMIN_PASSWORD`, the first start writes a random administrator password to `data/initial-admin-password.txt` inside the data volume. Accounts that already exist keep their current passwords.
 
 A sample Arizona fleet loads the first time the database is empty. To start with an empty shop, set `SEED_DEMO=0` before that first start.
 
@@ -48,7 +48,7 @@ docker compose down
 - Open a work order, record labor and parts, and see the billable total as you go
 - **Bill this work** to snapshot that total onto a draft invoice
 - Issue the invoice, record payments, and hand the owner a printed sheet
-- Open an aircraft briefing that shows open squawks, the log, and the balance
+- Open an aircraft briefing that shows open squawks, the log, and the balance, and download that briefing as a PDF
 - Open the calendar, see what is already on a day, and add a visit, inspection, parts run, or ferry
 - On the Admin page, add a shop account, reset a password, deactivate someone who should no longer sign in, or export and import the whole shop
 
@@ -103,6 +103,7 @@ pytest
 | POST | `/api/invoices/{id}/void` | Void |
 | POST | `/api/invoices/{id}/payments` | Record a payment |
 | GET | `/api/present/aircraft/{id}` | Owner briefing |
+| GET | `/api/present/aircraft/{id}/pdf` | Aircraft briefing PDF |
 | GET | `/api/present/records/{id}` | Work sheet |
 | GET | `/api/present/invoices/{id}` | Invoice sheet |
 
@@ -114,15 +115,15 @@ pytest
 | `PORT` | `8088` | HTTP port |
 | `SEED_DEMO` | `1` | Load the sample fleet when the database has no owners |
 | `ADMIN_USERNAME` | `admin` | First administrator, created when there are no accounts |
-| `ADMIN_PASSWORD` | sample password when `SEED_DEMO=1` | At least 10 characters. Blank with `SEED_DEMO=0` writes a random password into the data directory |
+| `ADMIN_PASSWORD` | `admin` when `SEED_DEMO=1` | At least 3 characters. Blank with `SEED_DEMO=0` writes a random password into the data directory |
 | `SHOP_USERNAME` | `ron` | Sample shop account, only when `SEED_DEMO=1` |
-| `SHOP_PASSWORD` | sample password when `SEED_DEMO=1` | Shop account password |
+| `SHOP_PASSWORD` | `ron` when `SEED_DEMO=1` | Shop account password |
 | `SESSION_SECURE` | `0` | Set to `1` when the site is served over HTTPS |
 | `DATABASE_URL` | `sqlite:///{DATA_DIR}/kinney.db` | Override the database |
 
 ## Notes
 
-- An administrator’s menu is only the Admin page. A shop account keeps Briefing, Calendar, Records, Billing, Fleet, and Present.
+- An administrator sees Briefing, Calendar, Records, Billing, Fleet, and Aircraft, plus Admin. A shop account sees those shop tabs without Admin. Making a shop account an administrator adds the Admin tab beside the others.
 - Export downloads `kinney-aviation-backup.json`: owners, aircraft, work orders, invoices, the calendar, the shop profile, and accounts. The file contains password hashes. Keep it private. Import replaces what is in the shop, and the person who imports stays signed in.
 - Passwords are hashed. The session cookie is HTTP-only. Changing a password signs that person out.
 - Set `SESSION_SECURE=1` when a reverse proxy terminates HTTPS.

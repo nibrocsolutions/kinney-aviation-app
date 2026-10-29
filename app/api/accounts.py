@@ -106,8 +106,6 @@ def change_password(
         raise HTTPException(status_code=400, detail="Current password is not right.")
     if payload.new_password == payload.current_password:
         raise HTTPException(status_code=400, detail="Choose a different password.")
-    if payload.new_password.lower() == user.username.lower():
-        raise HTTPException(status_code=400, detail="Use a password that is not the username.")
     user.password_hash = hash_password(payload.new_password)
     revoke_sessions(db, user.id)
     db.commit()
@@ -123,8 +121,6 @@ def list_users(db: Session = Depends(get_db)) -> list[UserOut]:
 
 @admin.post("/users", response_model=UserOut, status_code=201)
 def create_user(payload: UserCreate, db: Session = Depends(get_db)) -> UserOut:
-    if payload.password.lower() == payload.username.lower():
-        raise HTTPException(status_code=400, detail="Use a password that is not the username.")
     existing = db.scalar(select(User).where(User.username == payload.username))
     if existing is not None:
         raise HTTPException(status_code=409, detail="That username is already in use.")
@@ -171,8 +167,6 @@ def update_user(
             revoke_sessions(db, user.id)
     signed_out = False
     if password:
-        if password.lower() == user.username.lower():
-            raise HTTPException(status_code=400, detail="Use a password that is not the username.")
         user.password_hash = hash_password(password)
         revoke_sessions(db, user.id)
         if user.id == request.state.user.id:

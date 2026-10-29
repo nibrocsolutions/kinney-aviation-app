@@ -84,9 +84,15 @@ def test_administrator_manages_accounts(client, anon):
 
     short = client.post(
         "/api/admin/users",
-        json={"username": "shorty", "display_name": "Short", "password": "tiny", "role": "shop"},
+        json={"username": "shorty", "display_name": "Short", "password": "no", "role": "shop"},
     )
     assert short.status_code == 422
+
+    same = client.post(
+        "/api/admin/users",
+        json={"username": "pilot", "display_name": "Pilot Desk", "password": "pilot", "role": "shop"},
+    )
+    assert same.status_code == 201
 
     anon.headers["X-Kinney-Request"] = "1"
     assert anon.post("/api/login", json={"username": "dispatch", "password": "dispatch-pass-1"}).status_code == 200

@@ -4,6 +4,7 @@ from fastapi import APIRouter, Depends, HTTPException, Response
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session, selectinload
 
+from app.briefing_pdf import briefing_pdf
 from app.billing import (
     amount_due_cents,
     apply_lines,
@@ -633,12 +634,33 @@ def delete_payment(payment_id: int, db: Session = Depends(get_db)) -> Response:
     return Response(status_code=204)
 
 
-@router.get("/present/aircraft/{aircraft_id}", response_model=PresentAircraft)
-def present_aircraft_view(aircraft_id: int, db: Session = Depends(get_db)) -> PresentAircraft:
-    shop = _shop(db)
+def _aircraft_for_briefing(aircraft_id: int, db: Session) -> Aircraft:
     aircraft = db.scalar(_aircraft_query().where(Aircraft.id == aircraft_id))
     if aircraft is None:
         raise HTTPException(status_code=404, detail="Aircraft not found.")
+    return aircraft
+
+
+@router.get("/present/aircraft/{aircraft_id}/pdf")
+def present_aircraft_pdf(aircraft_id: int, db: Session = Depends(get_db)) -> Response:
+    shop = _shop(db)
+    aircraft = _aircraft_for_briefing(aircraft_id, db)
+    sheet = present_aircraft(shop, aircraft, date.today())
+    filename = f"{aircraft.registration}-briefing.pdf"
+    return Response(
+        content=briefing_pdf(sheet),
+        media_type="application/pdf",
+        headers={
+            "Content-Disposition": f'attachment; filename="{filename}"',
+            "Cache-Control": "no-store",
+        },
+    )
+
+
+@router.get("/present/aircraft/{aircraft_id}", response_model=PresentAircraft)
+def present_aircraft_view(aircraft_id: int, db: Session = Depends(get_db)) -> PresentAircraft:
+    shop = _shop(db)
+    aircraft = _aircraft_for_briefing(aircraft_id, db)
     return present_aircraft(shop, aircraft, date.today())
 
 
