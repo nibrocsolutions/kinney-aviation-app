@@ -983,6 +983,17 @@ function showApp() {
   applySession();
 }
 
+function releaseMobileZoom() {
+  const field = document.activeElement;
+  if (field && field !== document.body && typeof field.blur === "function") field.blur();
+  const meta = document.querySelector('meta[name="viewport"]');
+  if (!meta) return;
+  const content = meta.getAttribute("content") || "width=device-width, initial-scale=1";
+  if (content.includes("maximum-scale")) return;
+  meta.setAttribute("content", `${content}, maximum-scale=1`);
+  window.setTimeout(() => meta.setAttribute("content", content), 100);
+}
+
 function dayItem(item) {
   const when = item.starts_at ? `${item.starts_at} · ` : "";
   const title = item.href ? `<a href="${esc(item.href)}">${esc(item.title)}</a>` : esc(item.title);
@@ -1688,6 +1699,7 @@ document.getElementById("login-form").addEventListener("submit", async (event) =
       body: { username: data.get("username"), password: data.get("password") },
     });
     form.querySelector("[name=password]").value = "";
+    releaseMobileZoom();
     showApp();
     document.getElementById("view").dataset.loaded = "";
     render();
