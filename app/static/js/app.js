@@ -948,9 +948,17 @@ function applySession() {
   document.body.classList.remove("is-login");
 }
 
+function resetToMainPage() {
+  if (location.hash === "#briefing" || location.hash === "") return;
+  history.replaceState(null, "", `${location.pathname}${location.search}#briefing`);
+}
+
 function showLogin(note) {
+  const leaving = signedIn;
   signedIn = false;
   state.user = null;
+  if (leaving) resetToMainPage();
+  document.title = "Kinney Aviation";
   document.body.classList.add("is-login");
   document.body.classList.remove("is-presenting");
   document.getElementById("app").hidden = true;

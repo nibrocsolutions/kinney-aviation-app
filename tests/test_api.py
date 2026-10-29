@@ -28,6 +28,7 @@ def test_health_and_homepage(client):
     assert "Download PDF" in script.text
     assert 'setHeader("Present"' not in script.text
     assert "All presentations" not in script.text
+    assert "function resetToMainPage()" in script.text
     assert "Briefing" in body
     assert "Calendar" in body
     assert "Sign in" in body
