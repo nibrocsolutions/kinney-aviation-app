@@ -21,9 +21,21 @@ def test_aircraft_briefing_downloads_as_pdf(client, anon):
     assert body.startswith(b"%PDF")
     assert b"N5183K" in body
     assert b"Elena Vasquez" in body
-    assert b"Aircraft briefing" in body
+    assert b"AIRCRAFT BRIEFING" in body
+    assert b"TACH / HOBBS" in body
+    assert b"WORK ORDER" in body
+    assert b"Open items" in body
     assert b"%%EOF" in body
     assert client.get("/api/present/aircraft/999999/pdf").status_code == 404
+
+    from app.briefing_pdf import briefing_pdf
+    from app.schemas import PresentAircraft
+
+    sheet = PresentAircraft.model_validate(client.get(f"/api/present/aircraft/{skyhawk['id']}").json())
+    sheet.logbook = list(sheet.logbook) * 40
+    continued = briefing_pdf(sheet)
+    assert b"Page 2 of" in continued
+    assert continued.count(b"N5183K") >= 2
 
     anon.headers["X-Kinney-Request"] = "1"
     signed = anon.post("/api/login", json={"username": "ron", "password": "test-shop-password"})
