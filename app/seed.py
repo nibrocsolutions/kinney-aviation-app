@@ -6,7 +6,7 @@ from datetime import date
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
-from app.auth import hash_password, normalize_password, normalize_username
+from app.auth import hash_password, normalize_password, normalize_username, verify_password
 from app.billing import invoice_totals, lines_from_record, recompute_invoice
 from app.config import settings
 from app.models import (
@@ -59,6 +59,33 @@ def _password_for(explicit: str, demo_fallback: str, label: str) -> tuple[str, b
     return chosen, generated
 
 
+# Published sample passwords from before admin/admin and ron/ron.
+_PREVIOUS_SAMPLE_PASSWORDS = ("Kinney-Admin-2026", "Kinney-Shop-2026")
+
+
+def refresh_sample_passwords(db: Session) -> None:
+    """Move existing admin and ron accounts off the previous sample passwords."""
+    if not settings.seed_demo:
+        return
+    admin_name = normalize_username(settings.admin_username)
+    admin_password, _generated = _password_for(settings.admin_password, "admin", "ADMIN_PASSWORD")
+    _upgrade_sample_password(db, admin_name, admin_password)
+    shop_name = normalize_username(settings.shop_username)
+    if shop_name and shop_name != admin_name:
+        shop_password, _generated = _password_for(settings.shop_password, "ron", "SHOP_PASSWORD")
+        _upgrade_sample_password(db, shop_name, shop_password)
+
+
+def _upgrade_sample_password(db: Session, username: str, new_password: str) -> None:
+    user = db.scalar(select(User).where(User.username == username))
+    if user is None or verify_password(new_password, user.password_hash):
+        return
+    if not any(verify_password(old, user.password_hash) for old in _PREVIOUS_SAMPLE_PASSWORDS):
+        return
+    user.password_hash = hash_password(new_password)
+    print(f"Kinney Aviation: updated the sample password for {username}", flush=True)
+
+
 def ensure_users(db: Session) -> None:
     if db.scalar(select(func.count(User.id))):
         return
@@ -103,6 +130,7 @@ def seed_database(db: Session) -> None:
         _load_demo(db, shop)
         shop.demo_seeded = True
     ensure_users(db)
+    refresh_sample_passwords(db)
     db.commit()
 
 
