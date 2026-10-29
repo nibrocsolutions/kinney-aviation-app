@@ -29,6 +29,10 @@ def test_health_and_homepage(client):
     assert 'setHeader("Present"' not in script.text
     assert "All presentations" not in script.text
     assert "function resetToMainPage()" in script.text
+    assert "releaseMobileZoom" in script.text
+    css = client.get("/static/css/app.css")
+    assert css.status_code == 200
+    assert "font-size: 16px" in css.text
     assert "Briefing" in body
     assert "Calendar" in body
     assert "Sign in" in body
