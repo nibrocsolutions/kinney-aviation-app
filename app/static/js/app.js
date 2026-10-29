@@ -736,7 +736,7 @@ function renderPresentIndex() {
         <p>${esc(item.make)} ${esc(item.model)} · ${esc(item.customer_name)}</p>
         <p>Owner briefing</p>
       </a>
-      <button type="button" class="btn btn-ghost-dark" data-action="download-briefing" data-id="${item.id}" data-registration="${esc(item.registration)}">Download PDF</button>
+      <button type="button" class="btn btn-primary" data-action="download-briefing" data-id="${item.id}" data-registration="${esc(item.registration)}">Download PDF</button>
     </article>`).join("");
   document.getElementById("view").innerHTML = `
     <p class="lede" style="margin-bottom:1rem">Briefings, work sheets, and invoices read the same records. Nothing is retyped for the owner.</p>
@@ -786,7 +786,7 @@ function renderAircraftSheet(data) {
   const openBalance = moneyRows.reduce((sum, invoice) => sum + invoice.balance_cents, 0);
   document.getElementById("view").innerHTML = `
     <div class="present-toolbar no-print">
-      <a class="btn btn-ghost-dark" href="#present">All aircraft</a>
+      <a class="btn btn-ghost-dark" href="#present">All Aircraft</a>
       <a class="btn btn-ghost-dark" href="#fleet/${aircraft.id}">Back to fleet</a>
       <button type="button" class="btn btn-primary" data-action="download-briefing" data-id="${aircraft.id}" data-registration="${esc(aircraft.registration)}">Download PDF</button>
       <button type="button" class="btn btn-ghost-dark" data-action="print">Print</button>
