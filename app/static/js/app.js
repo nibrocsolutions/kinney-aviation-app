@@ -590,7 +590,7 @@ async function renderInvoiceDetail(id) {
   const invoice = await api(`/api/invoices/${id}`);
   const draft = invoice.status === "draft";
   const open = invoice.status === "issued" || invoice.status === "partial";
-  setHeader(invoice.number, `${invoice.registration} · ${invoice.customer_name}`, `<a class="btn btn-primary" href="#present/invoice/${invoice.id}">Present invoice</a>`);
+  setHeader(invoice.number, `${invoice.registration} · ${invoice.customer_name}`, `<a class="btn btn-primary" href="#present/invoice/${invoice.id}">Invoice sheet</a>`);
   const rows = invoice.lines.map((line) => `
     <tr>
       <td>${esc({ labor: "Labor", part: "Part", travel: "Travel" }[line.kind] || line.kind)} · ${esc(line.description)}</td>
@@ -728,13 +728,16 @@ async function renderAircraftDetail(id) {
 }
 
 function renderPresentIndex() {
-  setHeader("Present", "Presentation layer", "");
+  setHeader("Aircraft", "Briefings", "");
   const aircraft = state.aircraft.map((item) => `
-    <a class="aircraft-card" href="#present/aircraft/${item.id}">
-      <div class="reg">${esc(item.registration)}</div>
-      <p>${esc(item.make)} ${esc(item.model)} · ${esc(item.customer_name)}</p>
-      <p>Owner briefing</p>
-    </a>`).join("");
+    <article class="aircraft-card">
+      <a class="card-link" href="#present/aircraft/${item.id}">
+        <div class="reg">${esc(item.registration)}</div>
+        <p>${esc(item.make)} ${esc(item.model)} · ${esc(item.customer_name)}</p>
+        <p>Owner briefing</p>
+      </a>
+      <button type="button" class="btn btn-ghost-dark" data-action="download-briefing" data-id="${item.id}" data-registration="${esc(item.registration)}">Download PDF</button>
+    </article>`).join("");
   document.getElementById("view").innerHTML = `
     <p class="lede" style="margin-bottom:1rem">Briefings, work sheets, and invoices read the same records. Nothing is retyped for the owner.</p>
     <div class="stats">
@@ -783,9 +786,10 @@ function renderAircraftSheet(data) {
   const openBalance = moneyRows.reduce((sum, invoice) => sum + invoice.balance_cents, 0);
   document.getElementById("view").innerHTML = `
     <div class="present-toolbar no-print">
-      <a class="btn btn-ghost-dark" href="#present">All presentations</a>
+      <a class="btn btn-ghost-dark" href="#present">All aircraft</a>
       <a class="btn btn-ghost-dark" href="#fleet/${aircraft.id}">Back to fleet</a>
-      <button type="button" class="btn btn-primary" data-action="print">Print</button>
+      <button type="button" class="btn btn-primary" data-action="download-briefing" data-id="${aircraft.id}" data-registration="${esc(aircraft.registration)}">Download PDF</button>
+      <button type="button" class="btn btn-ghost-dark" data-action="print">Print</button>
     </div>
     <article class="sheet">
       ${sheetHead("Aircraft briefing")}
@@ -931,10 +935,7 @@ function applySession() {
   const brand = document.getElementById("brand");
   const admin = Boolean(state.user && state.user.role === "admin");
   adminLink.hidden = !admin;
-  document.querySelectorAll("[data-shop]").forEach((link) => {
-    link.hidden = admin;
-  });
-  if (brand) brand.setAttribute("href", admin ? "#admin" : "#briefing");
+  if (brand) brand.setAttribute("href", "#briefing");
   if (!state.user) {
     session.hidden = true;
     return;
@@ -1053,6 +1054,27 @@ async function renderCalendar(iso) {
         </form>
       </section>
     </div>`;
+}
+
+async function downloadBriefing(id, registration) {
+  const response = await fetch(`/api/present/aircraft/${id}/pdf`, { headers: { "X-Kinney-Request": "1" } });
+  if (response.status === 401) {
+    showLogin();
+    throw new Error("Sign in required.");
+  }
+  if (!response.ok) {
+    const data = await response.json().catch(() => ({}));
+    throw new Error(errorMessage(data, "The briefing could not be downloaded."));
+  }
+  const blob = await response.blob();
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = `${registration || "aircraft"}-briefing.pdf`;
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 1500);
 }
 
 async function exportShop() {
@@ -1187,11 +1209,6 @@ async function renderPresent(parts) {
 }
 
 async function render() {
-  if (state.user && state.user.role === "admin" && parseRoute().name !== "admin") {
-    document.body.classList.remove("is-presenting");
-    if (location.hash !== "#admin") location.hash = "#admin";
-    return;
-  }
   const token = ++renderToken;
   const route = parseRoute();
   const presenting = route.name === "present" && route.parts.length > 0;
@@ -1590,6 +1607,8 @@ document.addEventListener("click", (event) => {
         showFlash("Removed from the day.", "ok");
         render();
       });
+    } else if (action === "download-briefing") {
+      run(() => downloadBriefing(id, actionEl.dataset.registration));
     } else if (action === "export-data") {
       run(() => exportShop());
     } else if (action === "sign-out") {

@@ -55,7 +55,7 @@ def _password_for(explicit: str, demo_fallback: str, label: str) -> tuple[str, b
     try:
         normalize_password(chosen)
     except ValueError as exc:
-        raise RuntimeError(f"{label} must be at least 10 characters.") from exc
+        raise RuntimeError(f"{label} must be at least 3 characters.") from exc
     return chosen, generated
 
 
@@ -63,7 +63,7 @@ def ensure_users(db: Session) -> None:
     if db.scalar(select(func.count(User.id))):
         return
     username = normalize_username(settings.admin_username)
-    password, generated = _password_for(settings.admin_password, "Kinney-Admin-2026", "ADMIN_PASSWORD")
+    password, generated = _password_for(settings.admin_password, "admin", "ADMIN_PASSWORD")
     db.add(
         User(
             username=username,
@@ -82,7 +82,7 @@ def ensure_users(db: Session) -> None:
         shop_name = normalize_username(settings.shop_username)
         if shop_name == username:
             shop_name = ""
-        shop_password, _generated = _password_for(settings.shop_password, "Kinney-Shop-2026", "SHOP_PASSWORD")
+        shop_password, _generated = _password_for(settings.shop_password, "ron", "SHOP_PASSWORD")
         if shop_name:
             display = "Ron Kinney" if shop_name == "ron" else shop_name
             db.add(

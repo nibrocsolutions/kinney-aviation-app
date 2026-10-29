@@ -16,7 +16,7 @@ def test_health_and_homepage(client):
     assert "Kinney Aviation" in body
     assert "Records" in body
     assert "Billing" in body
-    assert "Present" in body
+    assert "Aircraft" in body
     assert "Briefing" in body
     assert "Calendar" in body
     assert "Sign in" in body

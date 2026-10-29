@@ -62,8 +62,8 @@ def normalize_display_name(value: str) -> str:
 
 
 def normalize_password(value: str) -> str:
-    if len(value) < 10 or len(value) > 200:
-        raise ValueError("Use a password of at least 10 characters.")
+    if len(value) < 3 or len(value) > 200:
+        raise ValueError("Use a password of at least 3 characters.")
     return value
 
 
