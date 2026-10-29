@@ -28,7 +28,7 @@ With the sample fleet, the first start creates two accounts unless you set diffe
 | Administrator | `admin` | `admin` | Shop tabs, plus accounts, export, and import |
 | Shop | `ron` | `ron` | Briefing, calendar, records, billing, fleet, and aircraft briefings |
 
-These sample passwords match the usernames. Change both on the Admin page before anyone else can reach the app. Set `ADMIN_PASSWORD` and `SHOP_PASSWORD` to override them. With `SEED_DEMO=0` and no `ADMIN_PASSWORD`, the first start writes a random administrator password to `data/initial-admin-password.txt` inside the data volume. Accounts that already exist keep their current passwords.
+These sample passwords match the usernames. On startup, an existing `admin` or `ron` account that still has the previous sample password (`Kinney-Admin-2026` or `Kinney-Shop-2026`) is updated to `admin` or `ron`. Change both on the Admin page before anyone else can reach the app. Set `ADMIN_PASSWORD` and `SHOP_PASSWORD` to override them. With `SEED_DEMO=0` and no `ADMIN_PASSWORD`, the first start writes a random administrator password to `data/initial-admin-password.txt` inside the data volume.
 
 A sample Arizona fleet loads the first time the database is empty. To start with an empty shop, set `SEED_DEMO=0` before that first start.
 

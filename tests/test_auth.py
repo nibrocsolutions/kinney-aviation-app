@@ -134,6 +134,60 @@ def test_mutation_without_the_request_header_is_rejected(client):
     assert response.status_code == 403
 
 
+def test_existing_sample_accounts_take_admin_and_ron(anon):
+    from app.auth import hash_password
+    from app.config import settings
+    from app.database import SessionLocal
+    from app.models import User
+    from app.seed import refresh_sample_passwords
+
+    previous_admin = settings.admin_password
+    previous_shop = settings.shop_password
+    settings.admin_password = "admin"
+    settings.shop_password = "ron"
+    db = SessionLocal()
+    try:
+        for username, old_password in (("admin", "Kinney-Admin-2026"), ("ron", "Kinney-Shop-2026")):
+            user = db.scalar(select(User).where(User.username == username))
+            user.password_hash = hash_password(old_password)
+        db.commit()
+        refresh_sample_passwords(db)
+        db.commit()
+    finally:
+        settings.admin_password = previous_admin
+        settings.shop_password = previous_shop
+        db.close()
+
+    anon.headers["X-Kinney-Request"] = "1"
+    assert anon.post("/api/login", json={"username": "admin", "password": "Kinney-Admin-2026"}).status_code == 401
+    assert anon.post("/api/login", json={"username": "admin", "password": "admin"}).status_code == 200
+    assert anon.post("/api/logout").status_code == 204
+    assert anon.post("/api/login", json={"username": "ron", "password": "Kinney-Shop-2026"}).status_code == 401
+    assert anon.post("/api/login", json={"username": "ron", "password": "ron"}).status_code == 200
+
+
+def test_a_changed_password_is_not_replaced(anon):
+    from app.auth import hash_password
+    from app.database import SessionLocal
+    from app.models import User
+    from app.seed import refresh_sample_passwords
+
+    db = SessionLocal()
+    try:
+        user = db.scalar(select(User).where(User.username == "admin"))
+        user.password_hash = hash_password("custom-admin-pass")
+        db.commit()
+        refresh_sample_passwords(db)
+        db.commit()
+    finally:
+        db.close()
+
+    anon.headers["X-Kinney-Request"] = "1"
+    assert anon.post("/api/login", json={"username": "admin", "password": "custom-admin-pass"}).status_code == 200
+    assert anon.post("/api/logout").status_code == 204
+    assert anon.post("/api/login", json={"username": "admin", "password": "test-admin-password"}).status_code == 401
+
+
 def test_sign_in_locks_after_repeated_failures(anon):
     anon.headers["X-Kinney-Request"] = "1"
     for _ in range(10):
